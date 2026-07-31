@@ -1,0 +1,17 @@
+[package]
+name = "rcryptolib"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+macrotime = "2.1.1"
+rand = "0.10.2"
+sha2 = "0.11.0"
+
+[build]
+rustflags = ["-C", "target-cpu=native", "target-feature=-sha,-avx2,-avx512f"]
+
+[profile.release]
+panic = "abort"
+lto = "fat"
+opt-level = 3
