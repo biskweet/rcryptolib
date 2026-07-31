@@ -2,21 +2,21 @@
 
 use crate::hash::utils;
 
-fn shr(x: u32, n: u32) -> u32 { x >> n }
+macro_rules! shr { ($x:expr, $n:expr) => { ($x) >> ($n) } }
 
-fn rotr(x: u32, n: u32) -> u32 { (x >> n) | (x << (32 - n)) }
+macro_rules! rotr { ($x:expr, $n:expr) => { ($x).rotate_right($n) } }
 
 fn ch(x: u32, y: u32, z: u32) -> u32 { (x & y) ^ ((!x) & z) }
 
-fn maj(x: u32, y: u32, z: u32) -> u32 { (x & y) ^ (x & z) ^ (y & z) }
+fn maj(x: u32, y: u32, z: u32) -> u32 { x & (y | z) | (y & z) }
 
-fn bsig0(x: u32) -> u32 { rotr(x, 2)  ^ rotr(x, 13) ^ rotr(x, 22) }
+fn bsig0(x: u32) -> u32 { rotr!(x,  2) ^ rotr!(x, 13) ^ rotr!(x, 22) }
 
-fn bsig1(x: u32) -> u32 { rotr(x, 6)  ^ rotr(x, 11) ^ rotr(x, 25) }
+fn bsig1(x: u32) -> u32 { rotr!(x,  6) ^ rotr!(x, 11) ^ rotr!(x, 25) }
 
-fn ssig0(x: u32) -> u32 { rotr(x, 7)  ^ rotr(x, 18) ^ shr(x, 3) }
+fn ssig0(x: u32) -> u32 { rotr!(x,  7) ^ rotr!(x, 18) ^  shr!(x,  3) }
 
-fn ssig1(x: u32) -> u32 { rotr(x, 17) ^ rotr(x, 19) ^ shr(x, 10) }
+fn ssig1(x: u32) -> u32 { rotr!(x, 17) ^ rotr!(x, 19) ^  shr!(x, 10) }
 
 
 const K: [u32; 64] = [
@@ -40,6 +40,10 @@ const K: [u32; 64] = [
 
 
 fn process_block(block: &[u8; 64], hash: &mut[u32; 8]) {
+    // TODO: can be improved by declaring `message_schedule` as
+    // TODO: a [u32; 16] instead, and intertwining it initialization
+    // TODO: with the compression loop below.
+
     let mut message_schedule: [u32; 64] = [0; 64];
 
     for t in (0..64).step_by(4) {
@@ -112,8 +116,11 @@ fn sha256(message: &[u8], padding: &[u8]) -> [u32; 8] {
 
     // Now if there a seam between the two arrays, process it
     if message_tail.len() > 0 {
-        let seam = [ message_tail, padding_head ].concat();
-        process_block(&seam.try_into().unwrap(), &mut hash);
+        let mut seam = [0u8; 64];
+        seam[..message_tail.len()].copy_from_slice(message_tail);
+        seam[message_tail.len()..].copy_from_slice(padding_head);
+
+        process_block(&seam, &mut hash);
     }
 
     for chunk in padding_chunks {
