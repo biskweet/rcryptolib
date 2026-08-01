@@ -6,17 +6,17 @@ macro_rules! shr { ($x:expr, $n:expr) => { ($x) >> ($n) } }
 
 macro_rules! rotr { ($x:expr, $n:expr) => { ($x).rotate_right($n) } }
 
-fn ch(x: u32, y: u32, z: u32) -> u32 { (x & y) ^ ((!x) & z) }
+macro_rules! ch { ($x:expr, $y:expr, $z:expr) => { (($x) & ($y)) ^ ((!($x)) & ($z)) } }
 
-fn maj(x: u32, y: u32, z: u32) -> u32 { x & (y | z) | (y & z) }
+macro_rules! maj { ($x:expr, $y:expr, $z:expr) => { ($x) & (($y) | ($z)) | (($y) & ($z)) } }
 
-fn bsig0(x: u32) -> u32 { rotr!(x,  2) ^ rotr!(x, 13) ^ rotr!(x, 22) }
+macro_rules! bsig0 { ($x:expr) => { rotr!($x,  2) ^ rotr!($x, 13) ^ rotr!($x, 22) } }
 
-fn bsig1(x: u32) -> u32 { rotr!(x,  6) ^ rotr!(x, 11) ^ rotr!(x, 25) }
+macro_rules! bsig1 { ($x:expr) => { rotr!($x,  6) ^ rotr!($x, 11) ^ rotr!($x, 25) } }
 
-fn ssig0(x: u32) -> u32 { rotr!(x,  7) ^ rotr!(x, 18) ^  shr!(x,  3) }
+macro_rules! ssig0 { ($x:expr) => { rotr!($x,  7) ^ rotr!($x, 18) ^  shr!($x,  3) } }
 
-fn ssig1(x: u32) -> u32 { rotr!(x, 17) ^ rotr!(x, 19) ^  shr!(x, 10) }
+macro_rules! ssig1 { ($x:expr) => { rotr!($x, 17) ^ rotr!($x, 19) ^  shr!($x, 10) } }
 
 
 const K: [u32; 64] = [
@@ -40,27 +40,8 @@ const K: [u32; 64] = [
 
 
 fn process_block(block: &[u8; 64], hash: &mut[u32; 8]) {
-    // TODO: can be improved by declaring `message_schedule` as
-    // TODO: a [u32; 16] instead, and intertwining it initialization
-    // TODO: with the compression loop below.
-
     let mut message_schedule: [u32; 64] = [0; 64];
 
-    for t in (0..64).step_by(4) {
-        message_schedule[t / 4] =
-            ((block[t]     as u32) << 24) |
-            ((block[t + 1] as u32) << 16) |
-            ((block[t + 2] as u32) <<  8) |
-            ((block[t + 3] as u32));
-    }
-
-    for t in 16..64 {
-        message_schedule[t] =
-            ssig1(message_schedule[t - 2])  + message_schedule[t - 7] +
-            ssig0(message_schedule[t - 15]) + message_schedule[t - 16];
-    }
-
-    // let mut variables = hash.clone();
     let mut a = hash[0];
     let mut b = hash[1];
     let mut c = hash[2];
@@ -70,9 +51,15 @@ fn process_block(block: &[u8; 64], hash: &mut[u32; 8]) {
     let mut g = hash[6];
     let mut h = hash[7];
 
-    for t in 0..64 {
-        let t1 = h + bsig1(e) + ch(e, f, g) + K[t] + message_schedule[t];
-        let t2 = bsig0(a) + maj(a, b, c);
+    for t in (0..64).step_by(4) {
+        message_schedule[t / 4] =
+            ((block[t]     as u32) << 24) |
+            ((block[t + 1] as u32) << 16) |
+            ((block[t + 2] as u32) <<  8) |
+            ((block[t + 3] as u32));
+
+        let t1 = h + bsig1!(e) + ch!(e, f, g) + K[t / 4] + message_schedule[t / 4];
+        let t2 = bsig0!(a) + maj!(a, b, c);
         h = g;
         g = f;
         f = e;
@@ -83,6 +70,24 @@ fn process_block(block: &[u8; 64], hash: &mut[u32; 8]) {
         a = t1 + t2;
     }
 
+    for t in 16..64 {
+        message_schedule[t] =
+            ssig1!(message_schedule[t - 2])  + message_schedule[t - 7] +
+            ssig0!(message_schedule[t - 15]) + message_schedule[t - 16];
+
+        let t1 = h + bsig1!(e) + ch!(e, f, g) + K[t] + message_schedule[t];
+        let t2 = bsig0!(a) + maj!(a, b, c);
+        h = g;
+        g = f;
+        f = e;
+        e = d + t1;
+        d = c;
+        c = b;
+        b = a;
+        a = t1 + t2;
+    }
+
+
     hash[0] += a;
     hash[1] += b;
     hash[2] += c;
@@ -92,7 +97,6 @@ fn process_block(block: &[u8; 64], hash: &mut[u32; 8]) {
     hash[6] += g;
     hash[7] += h;
 }
-
 
 
 fn sha256(message: &[u8], padding: &[u8]) -> [u32; 8] {
