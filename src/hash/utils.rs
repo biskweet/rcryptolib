@@ -1,3 +1,14 @@
+#[macro_export]
+macro_rules! bytes_to_word {
+    ($bytes:expr, $i:expr) => {
+        (($bytes[$i]     as u32) << 24) |
+        (($bytes[$i + 1] as u32) << 16) |
+        (($bytes[$i + 2] as u32) <<  8) |
+        (($bytes[$i + 3] as u32))
+    };
+}
+
+
 pub fn sha_compute_padding(message: &[u8], padding: &mut [u8], block_size: usize, message_length_intsize: usize) -> usize {
     // Computes the padding by reference in the mutable parameter, and returns its size in bytes
 

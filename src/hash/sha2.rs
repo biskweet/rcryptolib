@@ -1,5 +1,6 @@
 // Reference: RFC 6234 (https://www.ietf.org/rfc/rfc6234.txt)
 
+use crate::bytes_to_word;
 use crate::hash::utils;
 
 macro_rules! shr { ($x:expr, $n:expr) => { ($x) >> ($n) } }
@@ -40,7 +41,7 @@ const K: [u32; 64] = [
 
 
 fn process_block(block: &[u8; 64], hash: &mut[u32; 8]) {
-    let mut message_schedule: [u32; 64] = [0; 64];
+    let mut message_schedule = [0u32; 64];
 
     let mut a = hash[0];
     let mut b = hash[1];
@@ -52,11 +53,7 @@ fn process_block(block: &[u8; 64], hash: &mut[u32; 8]) {
     let mut h = hash[7];
 
     for t in (0..64).step_by(4) {
-        message_schedule[t / 4] =
-            ((block[t]     as u32) << 24) |
-            ((block[t + 1] as u32) << 16) |
-            ((block[t + 2] as u32) <<  8) |
-            ((block[t + 3] as u32));
+        message_schedule[t / 4] = bytes_to_word!(block, t);
 
         let t1 = h + bsig1!(e) + ch!(e, f, g) + K[t / 4] + message_schedule[t / 4];
         let t2 = bsig0!(a) + maj!(a, b, c);
@@ -136,12 +133,12 @@ fn sha256(message: &[u8], padding: &[u8]) -> [u32; 8] {
 
 
 pub fn sha2(message: &[u8]) -> [u8; 4 * 8] {
-    let mut padding: [u8; 2 * 64] = [0; 2 * 64];
-    let padding_size = utils::sha_compute_padding(message, &mut padding, 64, 8);
+    let mut padding = [0u8; 2 * 64];
+    let padding_length = utils::sha_compute_padding(message, &mut padding, 64, 8);
 
-    let hash = sha256(message, &padding[0..padding_size]);
+    let hash = sha256(message, &padding[0..padding_length]);
 
-    let mut digest : [u8; 4 * 8] = [0; 4 * 8];
+    let mut digest = [0u8; 4 * 8];
 
     for (i, word) in hash.iter().enumerate() {
         digest[i * 4]     = ((word & 0xFF000000) >> 24) as u8;
