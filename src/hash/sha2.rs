@@ -3,13 +3,13 @@
 use crate::bytes_to_word;
 use crate::hash::utils;
 
-macro_rules! shr { ($x:expr, $n:expr) => { ($x) >> ($n) } }
+macro_rules! shr   { ($x:expr, $n:expr) => { ($x) >> ($n) } }
 
-macro_rules! rotr { ($x:expr, $n:expr) => { ($x).rotate_right($n) } }
+macro_rules! rotr  { ($x:expr, $n:expr) => { ($x).rotate_right($n) } }
 
-macro_rules! ch { ($x:expr, $y:expr, $z:expr) => { (($x) & ($y)) ^ ((!($x)) & ($z)) } }
+macro_rules! ch    { ($x:expr, $y:expr, $z:expr) => { (($x) & ($y)) ^ ((!($x)) & ($z)) } }
 
-macro_rules! maj { ($x:expr, $y:expr, $z:expr) => { ($x) & (($y) | ($z)) | (($y) & ($z)) } }
+macro_rules! maj   { ($x:expr, $y:expr, $z:expr) => { ($x) & (($y) | ($z)) | (($y) & ($z)) } }
 
 macro_rules! bsig0 { ($x:expr) => { rotr!($x,  2) ^ rotr!($x, 13) ^ rotr!($x, 22) } }
 

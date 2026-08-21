@@ -9,11 +9,11 @@ macro_rules! s {
 
 macro_rules! f {
     ($t: expr, $B:expr, $C:expr, $D:expr) => {
-        if $t < 20 {
+        if ($t) < 20 {
             ($B) & ($C) | (!($B) & ($D))
-        } else if $t < 40 {
+        } else if ($t) < 40 {
             ($B) ^ ($C) ^ ($D)
-        } else if $t < 60 {
+        } else if ($t) < 60 {
             (($B) & ($C)) | (($B) & ($D)) | (($C) & ($D))
         } else {
             ($B) ^ ($C) ^ ($D)
@@ -24,11 +24,11 @@ macro_rules! f {
 
 macro_rules! k {
     ($t: expr) => {
-        if $t < 20 {
+        if ($t) < 20 {
             0x5A827999
-        } else if $t < 40 {
+        } else if ($t) < 40 {
             0x6ED9EBA1
-        } else if $t < 60 {
+        } else if ($t) < 60 {
             0x8F1BBCDC
         } else {
             0xCA62C1D6

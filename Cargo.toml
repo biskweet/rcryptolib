@@ -9,10 +9,12 @@ rand = "0.10.2"
 sha1 = "0.11.0"
 sha2 = "0.11.0"
 
-[build]
-rustflags = ["-C", "target-cpu=native", "target-feature=-sha,-avx2,-avx512f"]
+#[build]
+#rustflags = ["-C", "target-cpu=native", "target-feature=-sha,-avx2,-avx512f"]
 
 [profile.release]
 panic = "abort"
 lto = "fat"
 opt-level = 3
+target-cpu="native"
+target-feature= "-sha,-avx2,-avx512f"
