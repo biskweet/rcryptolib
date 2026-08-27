@@ -4,13 +4,11 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
+clippy = "0.0.302"
 macrotime = "2.1.1"
 rand = "0.10.2"
 sha1 = "0.11.0"
 sha2 = "0.11.0"
-
-#[build]
-#rustflags = ["-C", "target-cpu=native", "target-feature=-sha,-avx2,-avx512f"]
 
 [profile.release]
 panic = "abort"
@@ -18,3 +16,4 @@ lto = "fat"
 opt-level = 3
 target-cpu="native"
 target-feature= "-sha,-avx2,-avx512f"
+#strip = "symbols"

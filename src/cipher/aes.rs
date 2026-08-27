@@ -1,6 +1,7 @@
 // References: FIPS (https://csrc.nist.gov/csrc/media/projects/cryptographic-standards-and-guidelines/documents/aes-development/rijndael-ammended.pdf)
 // References: Wiki (https://en.wikipedia.org/wiki/Advanced_Encryption_Standard) and its subarticles
 
+use crate::cipher::aes::common::BlockCipherMode;
 
 macro_rules! gf_timex {
     ($x:expr) => { (($x) << 1) ^ ((($x) >> 7) * 0x1B) };
@@ -31,87 +32,123 @@ const S : [u8; 256] = [
 ];
 
 
-fn sub_bytes(state: &mut [u8; 16]) {
-    for byte in state.iter_mut() {
-        *byte = S[*byte as usize];
+const RC : [u8; 10] = [ 0x01, 0x02, 0x04, 0x08, 0x10, 0x20, 0x40, 0x80, 0x1B, 0x36 ];
+
+
+type AES128 = AES<16, 176>;  // 176 = 16 * (10 + 1)
+type AES192 = AES<24, 208>;  // 208 = 16 * (12 + 1)
+type AES256 = AES<32, 240>;  // 240 = 16 * (14 + 1)
+
+
+struct AES<const KEYLENGTH_IN_BYTES: usize, const EXPLENGTH_IN_BYTES: usize> {
+    state: [u8; 16],
+    // round: usize,
+    expanded_key: [u8; EXPLENGTH_IN_BYTES],
+}
+
+
+impl<const KEYLENGTH_IN_BYTES: usize, const EXPLENGTH_IN_BYTES: usize> AES<KEYLENGTH_IN_BYTES, EXPLENGTH_IN_BYTES> {
+    fn new() -> Self {
+        let state = [0u8; 16];
+        let expanded_key = [0u8; EXPLENGTH_IN_BYTES];
+
+        Self { state, expanded_key }
+    }
+
+    fn key_expansion(&mut self, cipher_key: &[u8; KEYLENGTH_IN_BYTES]) {
+        let n = KEYLENGTH_IN_BYTES / 4;
+        assert!(n == 4 || n == 6 || n == 8);
+
+        self.expanded_key[0..KEYLENGTH_IN_BYTES].copy_from_slice(cipher_key);
+
+        for word_index in n..EXPLENGTH_IN_BYTES / 4 {
+            let i = word_index * 4;
+            let remainder = word_index % n;
+
+            if remainder == 0 {
+                self.expanded_key[i + 0] = self.expanded_key[i + 0 - KEYLENGTH_IN_BYTES] ^ S[self.expanded_key[i - 3] as usize] ^ RC[word_index / n];
+                self.expanded_key[i + 1] = self.expanded_key[i + 1 - KEYLENGTH_IN_BYTES] ^ S[self.expanded_key[i - 2] as usize];
+                self.expanded_key[i + 2] = self.expanded_key[i + 2 - KEYLENGTH_IN_BYTES] ^ S[self.expanded_key[i - 1] as usize];
+                self.expanded_key[i + 3] = self.expanded_key[i + 3 - KEYLENGTH_IN_BYTES] ^ S[self.expanded_key[i - 4] as usize];
+            } else if n == 8 && remainder == 4 {
+                self.expanded_key[i + 0] = self.expanded_key[i + 0 - KEYLENGTH_IN_BYTES] ^ S[self.expanded_key[i - 4] as usize];
+                self.expanded_key[i + 1] = self.expanded_key[i + 1 - KEYLENGTH_IN_BYTES] ^ S[self.expanded_key[i - 3] as usize];
+                self.expanded_key[i + 2] = self.expanded_key[i + 2 - KEYLENGTH_IN_BYTES] ^ S[self.expanded_key[i - 2] as usize];
+                self.expanded_key[i + 3] = self.expanded_key[i + 3 - KEYLENGTH_IN_BYTES] ^ S[self.expanded_key[i - 1] as usize];
+            } else {
+                self.expanded_key[i + 0] = self.expanded_key[i + 0 - KEYLENGTH_IN_BYTES] ^ self.expanded_key[i - 4];
+                self.expanded_key[i + 1] = self.expanded_key[i + 1 - KEYLENGTH_IN_BYTES] ^ self.expanded_key[i - 3];
+                self.expanded_key[i + 2] = self.expanded_key[i + 2 - KEYLENGTH_IN_BYTES] ^ self.expanded_key[i - 2];
+                self.expanded_key[i + 3] = self.expanded_key[i + 3 - KEYLENGTH_IN_BYTES] ^ self.expanded_key[i - 1];
+            }
+        }
+    }
+
+    fn sub_bytes(&mut self) {
+        for byte in self.state.iter_mut() {
+            *byte = S[*byte as usize];
+        }
+    }
+
+    fn shift_rows(&mut self) {
+        let state = &mut self.state;
+        ( state[1], state[5], state[9],  state[13] ) = ( state[13], state[1],  state[5],  state[9] );
+        ( state[2], state[6], state[10], state[14] ) = ( state[10], state[14], state[2],  state[6] );
+        ( state[3], state[7], state[11], state[15] ) = ( state[7],  state[11], state[15], state[3] );
+    }
+
+    fn mix_columns(&mut self) {
+        let state = &mut self.state;
+
+        for i in (0..16).step_by(4) {
+            let (x0, x1, x2, x3) = (state[i], state[i + 1], state[i + 2], state[i + 3]);
+
+            // 2, 3, 1, 1
+            state[i + 0] = gf_timex!(x0) ^ gf_timex_plus1!(x1) ^ (x2) ^ (x3);
+
+            // 1, 2, 3, 1
+            state[i + 1] = (x0) ^ gf_timex!(x1) ^ gf_timex_plus1!(x2) ^ (x3);
+
+            // 1, 1, 2, 3
+            state[i + 2] = (x0) ^ (x1) ^ gf_timex!(x2) ^ gf_timex_plus1!(x3);
+
+            // 3, 1, 1, 2
+            state[i + 3] = gf_timex_plus1!(x0) ^ (x1) ^ (x2) ^ gf_timex!(x3);
+         }
+    }
+
+    fn add_round_key(&mut self, round_index: usize) {
+        let round_key = &self.expanded_key[round_index * 16..(round_index + 1) * 16];
+
+        // Assume -O3 will automatically SIMD out the operation
+        for i in 0..16 {
+            self.state[i] ^= round_key[i];
+        }
+    }
+
+    fn round(&mut self, round_index: usize) {
+        // Alternatively, there is the _mm_aesenc_si128 intrinsic for that.
+        // But it's less fun!
+
+        self.sub_bytes();
+        self.shift_rows();
+        self.mix_columns();
+        self.add_round_key(round_index);
     }
 }
 
 
-fn shift_rows(state: &mut [u8; 16]) {
-    ( state[1], state[5], state[9],  state[13] ) = ( state[13], state[1],  state[5],  state[9] );
-    ( state[2], state[6], state[10], state[14] ) = ( state[10], state[14], state[2],  state[6] );
-    ( state[3], state[7], state[11], state[15] ) = ( state[7],  state[11], state[15], state[3] );
-    // ( state[4],  state[5],  state[6],  state[7]  ) = ( state[7],  state[4],  state[5],  state[6]  );
-    // ( state[8],  state[9],  state[10], state[11] ) = ( state[10], state[11], state[8],  state[9]  );
-    // ( state[12], state[13], state[14], state[15] ) = ( state[13], state[14], state[15], state[12] );
-}
+pub fn aes128(message: &[u8], cipher_key: &[u8], mode: BlockCipherMode) -> Vec<u8> { aes(message, cipher_key, 10, mode) }
+
+pub fn aes192(message: &[u8], cipher_key: &[u8], mode: BlockCipherMode) -> Vec<u8> { aes(message, cipher_key, 12, mode) }
+
+pub fn aes256(message: &[u8], cipher_key: &[u8], mode: BlockCipherMode) -> Vec<u8> { aes(message, cipher_key, 14, mode) }
 
 
-
-fn mix_columns(state: &mut [u8; 16]) {
-    for i in (0..16).step_by(4) {
-        let (x0, x1, x2, x3) = (state[i], state[i + 1], state[i + 2], state[i + 3]);
-
-        // 2, 3, 1, 1
-        state[i]     = gf_timex!(x0) ^ gf_timex_plus1!(x1) ^ (x2) ^ (x3);
-
-        // 1, 2, 3, 1
-        state[i + 1] = (x0) ^ gf_timex!(x1) ^ gf_timex_plus1!(x2) ^ (x3);
-
-        // 1, 1, 2, 3
-        state[i + 2] = (x0) ^ (x1) ^ gf_timex!(x2) ^ gf_timex_plus1!(x3);
- 
-        // 3, 1, 1, 2
-        state[i + 3] = gf_timex_plus1!(x0) ^ (x1) ^ (x2) ^ gf_timex!(x3);
-     }
-}
-
-
-fn add_round_key(state: &mut [u8; 16], round_key: &[u8; 16]) {
-    // Assume -O3 will automatically SIMD out the operation
-    for i in 0..16 {
-        state[i] ^= round_key[i];
-    }
-}
-
-
-fn round(state: &mut [u8; 16], round_key: &[u8; 16]) {
-    // Alternatively, there is the _mm_aesenc_si128 intrinsic for that.
-    // But it's less fun!
-
-    sub_bytes(state);
-    shift_rows(state);
-    mix_columns(state);
-    add_round_key(state, round_key);
-}
-
-
-fn key_expansion(cipher_key: &[u8], expanded_key: &mut [u8; 16]) {
-    // TODO
-}
-
-
-pub fn aes256(message: &[u8], cipher_key: &[u8]) -> Vec<u8> {
-    aes(message, cipher_key, 14)
-}
-
-
-fn aes(message: &[u8], cipher_key: &[u8], nb_rounds: u32) -> Vec<u8> {
-    let mut state = vec![0u8; ((message.len() + 15) >> 4) << 4];
-    state[0..message.len()].clone_from_slice(&message);
-
-    let mut expanded_key = [0u8; 16];
-    key_expansion(cipher_key, &mut expanded_key);
-
-    // add_round_key(state, &expanded_key);
-
-    for val in 1..nb_rounds {
-        // round(state)
-    }
-
-    state
+fn aes(message: &[u8], cipher_key: &[u8], nb_rounds: u32, mode: BlockCipherMode) -> Vec<u8> {
+    unimplemented!()
 }
 
 #[cfg(test)]
 mod tests;
+pub mod common;

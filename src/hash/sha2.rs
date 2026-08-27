@@ -1,7 +1,8 @@
 // Reference: RFC 6234 (https://www.ietf.org/rfc/rfc6234.txt)
 
 use crate::bytes_to_word;
-use crate::hash::utils;
+use crate::hash::common;
+use crate::utils::array_unpack_u32_u8;
 
 macro_rules! shr   { ($x:expr, $n:expr) => { ($x) >> ($n) } }
 
@@ -55,44 +56,53 @@ fn process_block(block: &[u8; 64], hash: &mut[u32; 8]) {
     for t in (0..64).step_by(4) {
         message_schedule[t / 4] = bytes_to_word!(block, t);
 
-        let t1 = h + bsig1!(e) + ch!(e, f, g) + K[t / 4] + message_schedule[t / 4];
-        let t2 = bsig0!(a) + maj!(a, b, c);
+        let t1 = h.wrapping_add(bsig1!(e))
+            .wrapping_add(ch!(e, f, g))
+            .wrapping_add(K[t / 4])
+            .wrapping_add(message_schedule[t / 4]);
+
+        let t2 = bsig0!(a).wrapping_add(maj!(a, b, c));
         h = g;
         g = f;
         f = e;
-        e = d + t1;
+        e = d.wrapping_add(t1);
         d = c;
         c = b;
         b = a;
-        a = t1 + t2;
+        a = t1.wrapping_add(t2);
     }
 
     for t in 16..64 {
-        message_schedule[t] =
-            ssig1!(message_schedule[t - 2])  + message_schedule[t - 7] +
-            ssig0!(message_schedule[t - 15]) + message_schedule[t - 16];
+        message_schedule[t] = ssig1!(message_schedule[t - 2])
+            .wrapping_add(message_schedule[t - 7])
+            .wrapping_add(ssig0!(message_schedule[t - 15]))
+            .wrapping_add(message_schedule[t - 16]);
 
-        let t1 = h + bsig1!(e) + ch!(e, f, g) + K[t] + message_schedule[t];
-        let t2 = bsig0!(a) + maj!(a, b, c);
+        let t1 = h.wrapping_add(bsig1!(e))
+            .wrapping_add(ch!(e, f, g))
+            .wrapping_add(K[t])
+            .wrapping_add(message_schedule[t]);
+
+        let t2 = bsig0!(a).wrapping_add(maj!(a, b, c));
         h = g;
         g = f;
         f = e;
-        e = d + t1;
+        e = d.wrapping_add(t1);
         d = c;
         c = b;
         b = a;
-        a = t1 + t2;
+        a = t1.wrapping_add(t2);
     }
 
 
-    hash[0] += a;
-    hash[1] += b;
-    hash[2] += c;
-    hash[3] += d;
-    hash[4] += e;
-    hash[5] += f;
-    hash[6] += g;
-    hash[7] += h;
+    hash[0] = hash[0].wrapping_add(a);
+    hash[1] = hash[1].wrapping_add(b);
+    hash[2] = hash[2].wrapping_add(c);
+    hash[3] = hash[3].wrapping_add(d);
+    hash[4] = hash[4].wrapping_add(e);
+    hash[5] = hash[5].wrapping_add(f);
+    hash[6] = hash[6].wrapping_add(g);
+    hash[7] = hash[7].wrapping_add(h);
 }
 
 
@@ -134,18 +144,13 @@ fn sha256(message: &[u8], padding: &[u8]) -> [u32; 8] {
 
 pub fn sha2(message: &[u8]) -> [u8; 4 * 8] {
     let mut padding = [0u8; 2 * 64];
-    let padding_length = utils::sha_compute_padding(message, &mut padding, 64, 8);
+    let padding_length = common::sha_compute_padding(message, &mut padding, 64, 8);
 
     let hash = sha256(message, &padding[0..padding_length]);
 
     let mut digest = [0u8; 4 * 8];
 
-    for (i, word) in hash.iter().enumerate() {
-        digest[i * 4]     = ((word & 0xFF000000) >> 24) as u8;
-        digest[i * 4 + 1] = ((word & 0x00FF0000) >> 16) as u8;
-        digest[i * 4 + 2] = ((word & 0x0000FF00) >>  8) as u8;
-        digest[i * 4 + 3] = ((word & 0x000000FF))       as u8;
-    }
+    array_unpack_u32_u8(&hash, &mut digest);
 
     digest
 }

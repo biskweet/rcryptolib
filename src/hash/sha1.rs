@@ -1,6 +1,7 @@
 // Reference: RFC 3164 (https://www.ietf.org/rfc/rfc3174.txt)
 
-use crate::{bytes_to_word, utils};
+use crate::{bytes_to_word, common};
+use crate::utils::array_unpack_u32_u8;
 
 macro_rules! s {
     ($x:expr, $n:expr) => { ($x).rotate_left($n) };
@@ -49,7 +50,10 @@ fn process_block(block: &[u8; 64], hash: &mut [u32; 5]) {
     for t in 0..16 {
         msg_schedule[t] = bytes_to_word!(block, t * 4);
 
-        let temp = s!(a, 5) + f!(t, b, c, d) + e + msg_schedule[t] + k!(t);
+        let temp = s!(a, 5).wrapping_add(f!(t, b, c, d))
+                           .wrapping_add(e)
+                           .wrapping_add(msg_schedule[t])
+                           .wrapping_add(k!(t));
         e = d;
         d = c;
         c = s!(b, 30);
@@ -63,7 +67,10 @@ fn process_block(block: &[u8; 64], hash: &mut [u32; 5]) {
             1
         );
 
-        let temp = s!(a, 5) + f!(t, b, c, d) + e + msg_schedule[t] + k!(t);
+        let temp = s!(a, 5).wrapping_add(f!(t, b, c, d))
+                           .wrapping_add(e)
+                           .wrapping_add(msg_schedule[t])
+                           .wrapping_add(k!(t));
         e = d;
         d = c;
         c = s!(b, 30);
@@ -71,17 +78,17 @@ fn process_block(block: &[u8; 64], hash: &mut [u32; 5]) {
         a = temp;
     }
 
-    hash[0] += a;
-    hash[1] += b;
-    hash[2] += c;
-    hash[3] += d;
-    hash[4] += e;
+    hash[0] = hash[0].wrapping_add(a);
+    hash[1] = hash[1].wrapping_add(b);
+    hash[2] = hash[2].wrapping_add(c);
+    hash[3] = hash[3].wrapping_add(d);
+    hash[4] = hash[4].wrapping_add(e);
 }
 
 
 pub fn sha1(message: &[u8]) -> [u8; 4 * 5] {
     let mut padding = [0u8; 2 * 64];
-    let padding_length = utils::sha_compute_padding(message, &mut padding, 64, 8);
+    let padding_length = common::sha_compute_padding(message, &mut padding, 64, 8);
 
     let mut hash: [u32; 5] = [
         0x67452301,
@@ -113,12 +120,7 @@ pub fn sha1(message: &[u8]) -> [u8; 4 * 5] {
 
     let mut digest = [0u8; 4 * 5];
 
-    for (i, word) in hash.iter().enumerate() {
-        digest[i * 4]     = ((word & 0xFF000000) >> 24) as u8;
-        digest[i * 4 + 1] = ((word & 0x00FF0000) >> 16) as u8;
-        digest[i * 4 + 2] = ((word & 0x0000FF00) >>  8) as u8;
-        digest[i * 4 + 3] = ((word & 0x000000FF))       as u8;
-    }
+    array_unpack_u32_u8(&hash, &mut digest);
 
     digest
 }
