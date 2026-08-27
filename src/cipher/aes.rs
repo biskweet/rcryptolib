@@ -1,7 +1,7 @@
 // References: FIPS (https://csrc.nist.gov/csrc/media/projects/cryptographic-standards-and-guidelines/documents/aes-development/rijndael-ammended.pdf)
 // References: Wiki (https://en.wikipedia.org/wiki/Advanced_Encryption_Standard) and its subarticles
 
-use crate::cipher::aes::common::BlockCipherMode;
+use crate::cipher::common::BlockCipherMode;
 
 macro_rules! gf_timex {
     ($x:expr) => { (($x) << 1) ^ ((($x) >> 7) * 0x1B) };
@@ -42,7 +42,6 @@ type AES256 = AES<32, 240>;  // 240 = 16 * (14 + 1)
 
 struct AES<const KEYLENGTH_IN_BYTES: usize, const EXPLENGTH_IN_BYTES: usize> {
     state: [u8; 16],
-    // round: usize,
     expanded_key: [u8; EXPLENGTH_IN_BYTES],
 }
 
@@ -151,4 +150,3 @@ fn aes(message: &[u8], cipher_key: &[u8], nb_rounds: u32, mode: BlockCipherMode)
 
 #[cfg(test)]
 mod tests;
-pub mod common;
