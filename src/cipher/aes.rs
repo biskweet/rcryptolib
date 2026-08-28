@@ -1,6 +1,7 @@
 // References: FIPS (https://csrc.nist.gov/csrc/media/projects/cryptographic-standards-and-guidelines/documents/aes-development/rijndael-ammended.pdf)
 // References: Wiki (https://en.wikipedia.org/wiki/Advanced_Encryption_Standard) and its subarticles
 
+use rand::random;
 use crate::cipher::common::BlockCipherMode;
 
 macro_rules! gf_timex {
@@ -137,15 +138,34 @@ impl<const KEYLENGTH_IN_BYTES: usize, const EXPLENGTH_IN_BYTES: usize> AES<KEYLE
 }
 
 
-pub fn aes128(message: &[u8], cipher_key: &[u8], mode: BlockCipherMode) -> Vec<u8> { aes(message, cipher_key, 10, mode) }
+pub fn aes128_enc(message: &[u8], cipher_key: &[u8], mode: BlockCipherMode) -> Vec<u8> { aes_enc(message, cipher_key, 10, mode) }
 
-pub fn aes192(message: &[u8], cipher_key: &[u8], mode: BlockCipherMode) -> Vec<u8> { aes(message, cipher_key, 12, mode) }
+pub fn aes192_enc(message: &[u8], cipher_key: &[u8], mode: BlockCipherMode) -> Vec<u8> { aes_enc(message, cipher_key, 12, mode) }
 
-pub fn aes256(message: &[u8], cipher_key: &[u8], mode: BlockCipherMode) -> Vec<u8> { aes(message, cipher_key, 14, mode) }
+pub fn aes256_enc(message: &[u8], cipher_key: &[u8], mode: BlockCipherMode) -> Vec<u8> { aes_enc(message, cipher_key, 14, mode) }
 
 
-fn aes(message: &[u8], cipher_key: &[u8], nb_rounds: u32, mode: BlockCipherMode) -> Vec<u8> {
-    unimplemented!()
+fn aes_enc(plaintext: &[u8], cipher_key: &[u8], nb_rounds: u32, mode: BlockCipherMode) -> Vec<u8> {
+    let mut ciphertext = vec![0u8; ((plaintext.len() + 16) >> 4) << 4];
+    ciphertext[..plaintext.len()].copy_from_slice(plaintext);
+
+    for i in plaintext.len()..ciphertext.len() {
+        ciphertext[i] = (ciphertext.len() - plaintext.len()) as u8;
+    }
+
+    let iv : [u8; 16] = random();  // Maybe change that for a home implementation of a PRNG later
+
+    match mode {
+        BlockCipherMode::CBC => {
+            unimplemented!()
+        },
+
+        BlockCipherMode::ECB => {
+            unimplemented!()
+        }
+    }
+
+    ciphertext
 }
 
 #[cfg(test)]
