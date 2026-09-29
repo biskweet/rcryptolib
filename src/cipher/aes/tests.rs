@@ -1,15 +1,18 @@
-use crate::hash::common::print_bytes_as_hex;
+use crate::common::print_bytes_as_hex;
 use super::*;
 
 #[test]
 fn t_mix_columns() {
     let mut aes = AES256::new();
-    aes.state = [
+
+    let source = [
         0x01, 0x01, 0x01, 0x01,
         0x63, 0x47, 0xA2, 0xF0,
         0xF2, 0x0A, 0x22, 0x5C,
         0xC6, 0xC6, 0xC6, 0xC6,
     ];
+
+    let mut state = source.clone();
 
     let target: [u8; 16] = [
         0x01, 0x01, 0x01, 0x01,
@@ -19,80 +22,81 @@ fn t_mix_columns() {
     ];
 
     println!("Before");
-    print_bytes_as_hex(&aes.state[0..4]);
-    print_bytes_as_hex(&aes.state[4..8]);
-    print_bytes_as_hex(&aes.state[8..12]);
-    print_bytes_as_hex(&aes.state[12..16]);
+    print_bytes_as_hex(&state, 4);
 
-    aes.mix_columns();
+aes.mix_columns(&mut state);
 
     println!("\nAfter");
-    print_bytes_as_hex(&aes.state[0..4]);
-    print_bytes_as_hex(&aes.state[4..8]);
-    print_bytes_as_hex(&aes.state[8..12]);
-    print_bytes_as_hex(&aes.state[12..16]);
+    print_bytes_as_hex(&state, 4);
 
-    assert!(aes.state[0..4].iter().eq(target[0..4].iter()));
-    assert!(aes.state[4..8].iter().eq(target[4..8].iter()));
-    assert!(aes.state[8..12].iter().eq(target[8..12].iter()));
-    assert!(aes.state[12..16].iter().eq(target[12..16].iter()));
+    assert_eq!(state, target);
 }
 
+
+#[test]
 fn t_shift_rows() {
-    let mut aes = AES256::new();
-    aes.state = [
-        0x01, 0x01, 0x01, 0x01,
-        0x63, 0x47, 0xA2, 0xF0,
-        0xF2, 0x0A, 0x22, 0x5C,
-        0xC6, 0xC6, 0xC6, 0xC6,
+    let mut aes = AES128::new();
+    let source : [u8; 16] = [
+        0x00, 0x01, 0x02, 0x03,
+        0x04, 0x05, 0x06, 0x07,
+        0x08, 0x09, 0x0a, 0x0b,
+        0x0c, 0x0d, 0x0e, 0x0f,
     ];
 
-    let target: [u8; 16] = [
-        0x01, 0x01, 0x01, 0x01,
-        0xF0, 0x63, 0x47, 0xA2,
-        0x22, 0x5C, 0xF2, 0x0A,
-        0xC6, 0xC6, 0xC6, 0xC6,
+    let mut state = source.clone();
+
+    let target : [u8; 16] = [
+        0x00, 0x05, 0x0a, 0x0f,
+        0x04, 0x09, 0x0e, 0x03,
+        0x08, 0x0d, 0x02, 0x07,
+        0x0c, 0x01, 0x06, 0x0b,
     ];
 
 
     println!("Before");
-    print_bytes_as_hex(&aes.state[0..4]);
-    print_bytes_as_hex(&aes.state[4..8]);
-    print_bytes_as_hex(&aes.state[8..12]);
-    print_bytes_as_hex(&aes.state[12..16]);
+    print_bytes_as_hex(&state, 4);
 
-    aes.shift_rows();
+    aes.shift_rows(&mut state);
 
     println!("\nAfter");
-    print_bytes_as_hex(&aes.state[0..4]);
-    print_bytes_as_hex(&aes.state[4..8]);
-    print_bytes_as_hex(&aes.state[8..12]);
-    print_bytes_as_hex(&aes.state[12..16]);
+    print_bytes_as_hex(&state, 4);
 
-    assert!(aes.state[0..4].iter().eq(target[0..4].iter()));
-    assert!(aes.state[4..8].iter().eq(target[4..8].iter()));
-    assert!(aes.state[8..12].iter().eq(target[8..12].iter()));
-    assert!(aes.state[12..16].iter().eq(target[12..16].iter()));
+    assert_eq!(state, target);
+}
+
+#[test]
+fn t_shift_rows_inv() {
+    let mut aes = AES128::new();
+    let source : [u8; 16] = [
+        0x00, 0x01, 0x02, 0x03,
+        0x04, 0x05, 0x06, 0x07,
+        0x08, 0x09, 0x0A, 0x0B,
+        0x0C, 0x0D, 0x0E, 0x0F,
+    ];
+
+    let mut state = source.clone();
+
+    aes.shift_rows(&mut state);
+    aes.shift_rows_inv(&mut state);
+
+    assert_eq!(state, source);
 }
 
 
-// fn t_add_round_key() {
-//     let mut aes = AES256::new();
-//     aes.state = [
-//         0x01, 0x01, 0x01, 0x01,
-//         0x63, 0x47, 0xA2, 0xF0,
-//         0xF2, 0x0A, 0x22, 0x5C,
-//         0xC6, 0xC6, 0xC6, 0xC6,
-//     ];
-//
-//     let target: [u8; 16] = [
-//         0x01 ^ 0x0F, 0x01 ^ 0x0B, 0x01 ^ 0x07, 0x01 ^ 0x03,
-//         0x63 ^ 0x0E, 0x47 ^ 0x0A, 0xA2 ^ 0x06, 0xF0 ^ 0x02,
-//         0xF2 ^ 0x0D, 0x0A ^ 0x09, 0x22 ^ 0x05, 0x5C ^ 0x01,
-//         0xC6 ^ 0x0C, 0xC6 ^ 0x08, 0xC6 ^ 0x04, 0xC6 ^ 0x00,
-//     ];
-//
-//
-//
-//
-// }
+#[test]
+fn t_mix_columns_inv() {
+    let mut aes = AES128::new();
+    let source : [u8; 16] = [
+        0x00, 0x01, 0x02, 0x03,
+        0x04, 0x05, 0x06, 0x07,
+        0x08, 0x09, 0x0A, 0x0B,
+        0x0C, 0x0D, 0x0E, 0x0F,
+    ];
+
+    let mut state = source.clone();
+
+    aes.mix_columns(&mut state);
+    aes.mix_columns_inv(&mut state);
+
+    assert_eq!(state, source);
+}

@@ -1,15 +1,34 @@
 // References: FIPS (https://csrc.nist.gov/csrc/media/projects/cryptographic-standards-and-guidelines/documents/aes-development/rijndael-ammended.pdf)
 // References: Wiki (https://en.wikipedia.org/wiki/Advanced_Encryption_Standard) and its subarticles
 
-use rand::random;
-use crate::cipher::common::BlockCipherMode;
+use crate::cipher::blockcipher_mode::{BlockCipher};
 
-macro_rules! gf_timex {
+macro_rules! gf_x2 {
     ($x:expr) => { (($x) << 1) ^ ((($x) >> 7) * 0x1B) };
 }
 
-macro_rules! gf_timex_plus1 {
-    ($x:expr) => { gf_timex!($x) ^ ($x) };
+macro_rules! gf_x3 {
+    ($x:expr) => { gf_x2!($x) ^ ($x) };
+}
+
+macro_rules! gf_x9 {
+    ($x:expr) => { gf_x2!(gf_x2!(gf_x2!($x))) ^ $x };
+    // ($x:expr) => { gf_x3!(gf_x3!($x)) };
+}
+
+macro_rules! gf_x11 {
+    ($x:expr) => { gf_x2!(gf_x2!(gf_x2!($x)) ^ $x) ^ $x };
+    // ($x:expr) => { gf_x2!(gf_x2!(gf_x2!($x)) ^ $x) ^ $x };
+}
+
+macro_rules! gf_x13 {
+    ($x:expr) => { gf_x2!(gf_x2!(gf_x2!($x) ^ $x)) ^ $x };
+    // ($x:expr) => { gf_x2!(gf_x2!(gf_x2!($x)) ^ $x) ^ $x };
+}
+
+macro_rules! gf_x14 {
+    ($x:expr) => { gf_x2!(gf_x2!(gf_x2!($x) ^ $x) ^ $x) };
+    // ($x:expr) => { gf_x2!(gf_x3!(gf_x2!($x)) ^ $x) };
 }
 
 
@@ -33,139 +52,227 @@ const S : [u8; 256] = [
 ];
 
 
+const SINV : [u8; 256] = [
+   0x52, 0x09, 0x6A, 0xD5, 0x30, 0x36, 0xA5, 0x38, 0xBF, 0x40, 0xA3, 0x9E, 0x81, 0xF3, 0xD7, 0xFB,
+   0x7C, 0xE3, 0x39, 0x82, 0x9B, 0x2F, 0xFF, 0x87, 0x34, 0x8E, 0x43, 0x44, 0xC4, 0xDE, 0xE9, 0xCB,
+   0x54, 0x7B, 0x94, 0x32, 0xA6, 0xC2, 0x23, 0x3D, 0xEE, 0x4C, 0x95, 0x0B, 0x42, 0xFA, 0xC3, 0x4E,
+   0x08, 0x2E, 0xA1, 0x66, 0x28, 0xD9, 0x24, 0xB2, 0x76, 0x5B, 0xA2, 0x49, 0x6D, 0x8B, 0xD1, 0x25,
+   0x72, 0xF8, 0xF6, 0x64, 0x86, 0x68, 0x98, 0x16, 0xD4, 0xA4, 0x5C, 0xCC, 0x5D, 0x65, 0xB6, 0x92,
+   0x6C, 0x70, 0x48, 0x50, 0xFD, 0xED, 0xB9, 0xDA, 0x5E, 0x15, 0x46, 0x57, 0xA7, 0x8D, 0x9D, 0x84,
+   0x90, 0xD8, 0xAB, 0x00, 0x8C, 0xBC, 0xD3, 0x0A, 0xF7, 0xE4, 0x58, 0x05, 0xB8, 0xB3, 0x45, 0x06,
+   0xD0, 0x2C, 0x1E, 0x8F, 0xCA, 0x3F, 0x0F, 0x02, 0xC1, 0xAF, 0xBD, 0x03, 0x01, 0x13, 0x8A, 0x6B,
+   0x3A, 0x91, 0x11, 0x41, 0x4F, 0x67, 0xDC, 0xEA, 0x97, 0xF2, 0xCF, 0xCE, 0xF0, 0xB4, 0xE6, 0x73,
+   0x96, 0xAC, 0x74, 0x22, 0xE7, 0xAD, 0x35, 0x85, 0xE2, 0xF9, 0x37, 0xE8, 0x1C, 0x75, 0xDF, 0x6E,
+   0x47, 0xF1, 0x1A, 0x71, 0x1D, 0x29, 0xC5, 0x89, 0x6F, 0xB7, 0x62, 0x0E, 0xAA, 0x18, 0xBE, 0x1B,
+   0xFC, 0x56, 0x3E, 0x4B, 0xC6, 0xD2, 0x79, 0x20, 0x9A, 0xDB, 0xC0, 0xFE, 0x78, 0xCD, 0x5A, 0xF4,
+   0x1F, 0xDD, 0xA8, 0x33, 0x88, 0x07, 0xC7, 0x31, 0xB1, 0x12, 0x10, 0x59, 0x27, 0x80, 0xEC, 0x5F,
+   0x60, 0x51, 0x7F, 0xA9, 0x19, 0xB5, 0x4A, 0x0D, 0x2D, 0xE5, 0x7A, 0x9F, 0x93, 0xC9, 0x9C, 0xEF,
+   0xA0, 0xE0, 0x3B, 0x4D, 0xAE, 0x2A, 0xF5, 0xB0, 0xC8, 0xEB, 0xBB, 0x3C, 0x83, 0x53, 0x99, 0x61,
+   0x17, 0x2B, 0x04, 0x7E, 0xBA, 0x77, 0xD6, 0x26, 0xE1, 0x69, 0x14, 0x63, 0x55, 0x21, 0x0C, 0x7D
+];
+
+
 const RC : [u8; 10] = [ 0x01, 0x02, 0x04, 0x08, 0x10, 0x20, 0x40, 0x80, 0x1B, 0x36 ];
 
 
-type AES128 = AES<16, 176>;  // 176 = 16 * (10 + 1)
-type AES192 = AES<24, 208>;  // 208 = 16 * (12 + 1)
-type AES256 = AES<32, 240>;  // 240 = 16 * (14 + 1)
-
-
-struct AES<const KEYLENGTH_IN_BYTES: usize, const EXPLENGTH_IN_BYTES: usize> {
-    state: [u8; 16],
-    expanded_key: [u8; EXPLENGTH_IN_BYTES],
+pub struct AES<const BLKLEN: usize, const KEYLEN: usize, const EXPLEN: usize, const NROUNDS: usize> {
+    pub expanded_key: [u8; EXPLEN],
 }
 
-
-impl<const KEYLENGTH_IN_BYTES: usize, const EXPLENGTH_IN_BYTES: usize> AES<KEYLENGTH_IN_BYTES, EXPLENGTH_IN_BYTES> {
-    fn new() -> Self {
-        let state = [0u8; 16];
-        let expanded_key = [0u8; EXPLENGTH_IN_BYTES];
-
-        Self { state, expanded_key }
-    }
-
-    fn key_expansion(&mut self, cipher_key: &[u8; KEYLENGTH_IN_BYTES]) {
-        let n = KEYLENGTH_IN_BYTES / 4;
+impl<const BLKLEN: usize, const KEYLEN: usize, const EXPLEN: usize, const NROUNDS: usize> AES<BLKLEN, KEYLEN, EXPLEN, NROUNDS> {
+    pub fn key_expansion(&mut self, cipher_key: &[u8; KEYLEN]) {
+        let n = KEYLEN / 4;
         assert!(n == 4 || n == 6 || n == 8);
 
-        self.expanded_key[0..KEYLENGTH_IN_BYTES].copy_from_slice(cipher_key);
+        self.expanded_key[0..KEYLEN].copy_from_slice(cipher_key);
 
-        for word_index in n..EXPLENGTH_IN_BYTES / 4 {
+        for word_index in n..EXPLEN / 4 {
             let i = word_index * 4;
             let remainder = word_index % n;
 
             if remainder == 0 {
-                self.expanded_key[i + 0] = self.expanded_key[i + 0 - KEYLENGTH_IN_BYTES] ^ S[self.expanded_key[i - 3] as usize] ^ RC[word_index / n];
-                self.expanded_key[i + 1] = self.expanded_key[i + 1 - KEYLENGTH_IN_BYTES] ^ S[self.expanded_key[i - 2] as usize];
-                self.expanded_key[i + 2] = self.expanded_key[i + 2 - KEYLENGTH_IN_BYTES] ^ S[self.expanded_key[i - 1] as usize];
-                self.expanded_key[i + 3] = self.expanded_key[i + 3 - KEYLENGTH_IN_BYTES] ^ S[self.expanded_key[i - 4] as usize];
+                self.expanded_key[i + 0] = self.expanded_key[i + 0 - KEYLEN] ^ S[self.expanded_key[i - 3] as usize] ^ RC[word_index / n - 1];
+                self.expanded_key[i + 1] = self.expanded_key[i + 1 - KEYLEN] ^ S[self.expanded_key[i - 2] as usize];
+                self.expanded_key[i + 2] = self.expanded_key[i + 2 - KEYLEN] ^ S[self.expanded_key[i - 1] as usize];
+                self.expanded_key[i + 3] = self.expanded_key[i + 3 - KEYLEN] ^ S[self.expanded_key[i - 4] as usize];
             } else if n == 8 && remainder == 4 {
-                self.expanded_key[i + 0] = self.expanded_key[i + 0 - KEYLENGTH_IN_BYTES] ^ S[self.expanded_key[i - 4] as usize];
-                self.expanded_key[i + 1] = self.expanded_key[i + 1 - KEYLENGTH_IN_BYTES] ^ S[self.expanded_key[i - 3] as usize];
-                self.expanded_key[i + 2] = self.expanded_key[i + 2 - KEYLENGTH_IN_BYTES] ^ S[self.expanded_key[i - 2] as usize];
-                self.expanded_key[i + 3] = self.expanded_key[i + 3 - KEYLENGTH_IN_BYTES] ^ S[self.expanded_key[i - 1] as usize];
+                self.expanded_key[i + 0] = self.expanded_key[i + 0 - KEYLEN] ^ S[self.expanded_key[i - 4] as usize];
+                self.expanded_key[i + 1] = self.expanded_key[i + 1 - KEYLEN] ^ S[self.expanded_key[i - 3] as usize];
+                self.expanded_key[i + 2] = self.expanded_key[i + 2 - KEYLEN] ^ S[self.expanded_key[i - 2] as usize];
+                self.expanded_key[i + 3] = self.expanded_key[i + 3 - KEYLEN] ^ S[self.expanded_key[i - 1] as usize];
             } else {
-                self.expanded_key[i + 0] = self.expanded_key[i + 0 - KEYLENGTH_IN_BYTES] ^ self.expanded_key[i - 4];
-                self.expanded_key[i + 1] = self.expanded_key[i + 1 - KEYLENGTH_IN_BYTES] ^ self.expanded_key[i - 3];
-                self.expanded_key[i + 2] = self.expanded_key[i + 2 - KEYLENGTH_IN_BYTES] ^ self.expanded_key[i - 2];
-                self.expanded_key[i + 3] = self.expanded_key[i + 3 - KEYLENGTH_IN_BYTES] ^ self.expanded_key[i - 1];
+                self.expanded_key[i + 0] = self.expanded_key[i + 0 - KEYLEN] ^ self.expanded_key[i - 4];
+                self.expanded_key[i + 1] = self.expanded_key[i + 1 - KEYLEN] ^ self.expanded_key[i - 3];
+                self.expanded_key[i + 2] = self.expanded_key[i + 2 - KEYLEN] ^ self.expanded_key[i - 2];
+                self.expanded_key[i + 3] = self.expanded_key[i + 3 - KEYLEN] ^ self.expanded_key[i - 1];
             }
         }
     }
 
-    fn sub_bytes(&mut self) {
-        for byte in self.state.iter_mut() {
+    fn add_round_key(&mut self, state: &mut [u8; BLKLEN], round_index: usize) {
+        let round_key = &self.expanded_key[round_index * BLKLEN..round_index * BLKLEN + BLKLEN];
+
+        // Assume -O3 will SIMD out the operation automatically
+        for i in 0..BLKLEN {
+            state[i] ^= round_key[i];
+        }
+    }
+
+    fn sub_bytes(&mut self, state: &mut [u8; BLKLEN]) {
+        for byte in state.iter_mut() {
             *byte = S[*byte as usize];
         }
     }
 
-    fn shift_rows(&mut self) {
-        let state = &mut self.state;
+    fn shift_rows(&mut self, state: &mut [u8; BLKLEN]) {
+        ( state[1], state[5], state[9],  state[13] ) = ( state[5],  state[9],  state[13], state[1]  );
+        ( state[2], state[6], state[10], state[14] ) = ( state[10], state[14], state[2],  state[6]  );
+        ( state[3], state[7], state[11], state[15] ) = ( state[15], state[3],  state[7],  state[11] );
+    }
+
+    fn mix_columns(&mut self, state: &mut [u8; BLKLEN]) {
+        for i in (0..16).step_by(4) {
+            let (x0, x1, x2, x3) = (state[i], state[i + 1], state[i + 2], state[i + 3]);
+
+            // 2, 3, 1, 1
+            state[i + 0] = gf_x2!(x0) ^ gf_x3!(x1) ^ (x2) ^ (x3);
+
+            // 1, 2, 3, 1
+            state[i + 1] = (x0) ^ gf_x2!(x1) ^ gf_x3!(x2) ^ (x3);
+
+            // 1, 1, 2, 3
+            state[i + 2] = (x0) ^ (x1) ^ gf_x2!(x2) ^ gf_x3!(x3);
+
+            // 3, 1, 1, 2
+            state[i + 3] = gf_x3!(x0) ^ (x1) ^ (x2) ^ gf_x2!(x3);
+         }
+    }
+
+    fn round(&mut self, state: &mut [u8; BLKLEN], round_index: usize) {
+        // Alternatively, there is the _mm_aesenc_si128 intrinsic for that.
+        // But it's less fun!
+
+        self.sub_bytes(state);
+        self.shift_rows(state);
+        self.mix_columns(state);
+        self.add_round_key(state, round_index);
+    }
+
+    fn sub_bytes_inv(&mut self, state: &mut [u8; BLKLEN]) {
+        for byte in state.iter_mut() {
+            *byte = SINV[*byte as usize];
+        }
+    }
+
+    fn shift_rows_inv(&mut self, state: &mut [u8; BLKLEN]) {
         ( state[1], state[5], state[9],  state[13] ) = ( state[13], state[1],  state[5],  state[9] );
         ( state[2], state[6], state[10], state[14] ) = ( state[10], state[14], state[2],  state[6] );
         ( state[3], state[7], state[11], state[15] ) = ( state[7],  state[11], state[15], state[3] );
     }
 
-    fn mix_columns(&mut self) {
-        let state = &mut self.state;
-
+    fn mix_columns_inv(&mut self, state: &mut [u8; BLKLEN]) {
         for i in (0..16).step_by(4) {
             let (x0, x1, x2, x3) = (state[i], state[i + 1], state[i + 2], state[i + 3]);
 
-            // 2, 3, 1, 1
-            state[i + 0] = gf_timex!(x0) ^ gf_timex_plus1!(x1) ^ (x2) ^ (x3);
+            // 14, 11, 13, 9
+            state[i + 0] = gf_x14!(x0) ^ gf_x11!(x1) ^ gf_x13!(x2) ^ gf_x9!(x3);
 
-            // 1, 2, 3, 1
-            state[i + 1] = (x0) ^ gf_timex!(x1) ^ gf_timex_plus1!(x2) ^ (x3);
+            // 9, 14, 11, 13
+            state[i + 1] = gf_x9!(x0) ^ gf_x14!(x1) ^ gf_x11!(x2) ^ gf_x13!(x3);
 
-            // 1, 1, 2, 3
-            state[i + 2] = (x0) ^ (x1) ^ gf_timex!(x2) ^ gf_timex_plus1!(x3);
+            // 13, 9, 14, 11
+            state[i + 2] = gf_x13!(x0) ^ gf_x9!(x1) ^ gf_x14!(x2) ^ gf_x11!(x3);
 
-            // 3, 1, 1, 2
-            state[i + 3] = gf_timex_plus1!(x0) ^ (x1) ^ (x2) ^ gf_timex!(x3);
+            // 11, 13, 9, 14
+            state[i + 3] = gf_x11!(x0) ^ gf_x13!(x1) ^ gf_x9!(x2) ^ gf_x14!(x3);
          }
     }
 
-    fn add_round_key(&mut self, round_index: usize) {
-        let round_key = &self.expanded_key[round_index * 16..(round_index + 1) * 16];
-
-        // Assume -O3 will automatically SIMD out the operation
-        for i in 0..16 {
-            self.state[i] ^= round_key[i];
-        }
-    }
-
-    fn round(&mut self, round_index: usize) {
-        // Alternatively, there is the _mm_aesenc_si128 intrinsic for that.
-        // But it's less fun!
-
-        self.sub_bytes();
-        self.shift_rows();
-        self.mix_columns();
-        self.add_round_key(round_index);
+    fn round_inv(&mut self, state: &mut [u8; BLKLEN], round_index: usize) {
+        self.add_round_key(state, round_index);
+        self.mix_columns_inv(state);
+        self.shift_rows_inv(state);
+        self.sub_bytes_inv(state);
     }
 }
 
 
-pub fn aes128_enc(message: &[u8], cipher_key: &[u8], mode: BlockCipherMode) -> Vec<u8> { aes_enc(message, cipher_key, 10, mode) }
+impl<const BLKLEN: usize, const KEYLEN: usize, const EXPLEN: usize, const NROUNDS: usize> BlockCipher<BLKLEN, KEYLEN> for AES<BLKLEN, KEYLEN, EXPLEN, NROUNDS> {
+    fn encrypt_block(&mut self, block: &mut [u8; BLKLEN], key: &[u8; KEYLEN]) {
+        // self.reset();
 
-pub fn aes192_enc(message: &[u8], cipher_key: &[u8], mode: BlockCipherMode) -> Vec<u8> { aes_enc(message, cipher_key, 12, mode) }
+        self.key_expansion(key);
+        self.add_round_key(block, 0);
 
-pub fn aes256_enc(message: &[u8], cipher_key: &[u8], mode: BlockCipherMode) -> Vec<u8> { aes_enc(message, cipher_key, 14, mode) }
-
-
-fn aes_enc(plaintext: &[u8], cipher_key: &[u8], nb_rounds: u32, mode: BlockCipherMode) -> Vec<u8> {
-    let mut ciphertext = vec![0u8; ((plaintext.len() + 16) >> 4) << 4];
-    ciphertext[..plaintext.len()].copy_from_slice(plaintext);
-
-    for i in plaintext.len()..ciphertext.len() {
-        ciphertext[i] = (ciphertext.len() - plaintext.len()) as u8;
-    }
-
-    let iv : [u8; 16] = random();  // Maybe change that for a home implementation of a PRNG later
-
-    match mode {
-        BlockCipherMode::CBC => {
-            unimplemented!()
-        },
-
-        BlockCipherMode::ECB => {
-            unimplemented!()
+        // block.copy_from_slice(&u128::to_be_bytes(0x875e402f063d6e732b5f3019bb801a85));
+        for i in 1..NROUNDS {
+            self.round(block, i);
         }
+
+        self.sub_bytes(block);
+        self.shift_rows(block);
+        self.add_round_key(block, NROUNDS);
     }
 
-    ciphertext
+    fn decrypt_block(&mut self, block: &mut [u8; BLKLEN], key: &[u8; KEYLEN]) {
+        self.key_expansion(key);
+
+        self.add_round_key(block, NROUNDS);
+
+        self.shift_rows_inv(block);
+        self.sub_bytes_inv(block);
+
+        for i in (1..NROUNDS).rev() {
+            self.round_inv(block, i);
+        }
+
+        self.add_round_key(block, 0);
+    }
+}
+
+
+impl AES<16, 16, 176, 10> {
+    pub fn new() -> Self {
+        let expanded_key = [0u8; 176];
+
+        Self { expanded_key }
+    }
+}
+
+impl AES<16, 24, 208, 12> {
+    pub fn new() -> Self {
+        let expanded_key = [0u8; 208];
+
+        Self { expanded_key }
+    }
+}
+
+impl AES<16, 32, 240, 14> {
+    pub fn new() -> Self {
+        let expanded_key = [0u8; 240];
+
+        Self { expanded_key }
+    }
+}
+
+
+pub type AES128 = AES<16, 16, 176, 10>;
+pub type AES192 = AES<16, 24, 208, 12>;
+pub type AES256 = AES<16, 32, 240, 14>;
+
+
+impl Default for AES128 {
+    fn default() -> Self { Self::new() }
+}
+
+
+impl Default for AES192 {
+    fn default() -> Self { Self::new() }
+}
+
+
+impl Default for AES256 {
+    fn default() -> Self { Self::new() }
 }
 
 #[cfg(test)]
