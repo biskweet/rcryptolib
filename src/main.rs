@@ -1,15 +1,13 @@
-// use crate::hash::utils;
 use macrotime;
-use rand::random;
-use rcryptolib::utils::array_unpack_u32_u8;
-// use rand::RngExt;
-// use sha1::Digest as Digest1;
-// use sha2::Digest as Digest2;
-//
-//
-// pub mod hash;
-// pub mod cipher;
-// pub mod main;
+use rand::{random, RngExt};
+
+use rcryptolib::hash::sha1::sha1;
+use rcryptolib::hash::sha2::sha2;
+
+use sha1::Digest;
+use sha1::Sha1;
+use sha2::Sha256;
+use rcryptolib::common::array_unpack_u32_u8;
 
 fn deinterleave32_naive(input: &u32) -> (u16, u16) {
     let mut output1 = 0;
@@ -21,7 +19,6 @@ fn deinterleave32_naive(input: &u32) -> (u16, u16) {
 
     for i in (1..32).step_by(2) {
         output2 <<= 1;
-        // println!("{i}");
         output2 |= ((input >> i) & 1) as u16;
     }
 
@@ -119,8 +116,12 @@ fn unpacker_c(hash: &[u32; 5]) -> [u8; 20] {
     digest
 }
 
-fn main() {
+
+#[allow(dead_code)]
+fn benchmark_unpacker() {
     let src : u32 = random();
+
+
 
     macrotime::dbg_time!("deinterleave32", {
         for _ in 0..10_000_000 {
@@ -171,45 +172,57 @@ fn main() {
             let _result = unpacker_c(&src);
         }
     });
+}
 
-    // let input = "my super message!my super message!my super message!my super message!my super message!my super message!";
-    //
-    // print!("Input: ");
-    // utils::print_bytes_as_hex(input.as_bytes());
-    //
-    // const INPUT_SIZE: usize = 1000;
-    // const NB_ITEMS: usize = 1_000_000;
-    //
-    // let mut rng = rand::rng();
-    //
-    // let sources = (0..NB_ITEMS).map(|_| {
-    //     let input: [u8; INPUT_SIZE] = rng.random();
-    //     input
-    // });
-    //
-    // let t1 = macrotime::time!({
-    //     for src_data in sources {
-    //         let mut hasher = Sha256::new();
-    //         hasher.update(&src_data);
-    //     }
-    // });
-    //
-    // let sources = (0..1_000_000).map(|_| {
-    //     let input: [u8; INPUT_SIZE] = rng.random();
-    //     input
-    // });
-    //
-    // let t2 = macrotime::time!({
-    //     for src_data in sources {
-    //         hash::sha2::sha2(&src_data);
-    //     }
-    // });
-    //
-    // println!("Crate: {:.2} seconds", t1.as_secs_f32());
-    // println!("Homemade: {:.2} seconds ({:.2}x as much time)", t2.as_secs_f32(), t2.as_secs_f32() / t1.as_secs_f32());
-    //
-    // let digest = hash::sha2::sha2(input.as_bytes());
-    //
-    // print!("\nHash: ");
-    // utils::print_bytes_as_hex(&digest);
+
+#[allow(dead_code)]
+fn benchmark_sha1() {
+    const INPUT_SIZE: usize = 1000;
+    const NB_ITEMS: usize = 1_000_000;
+    let mut src_data = vec![0u8; NB_ITEMS];
+    rand::rng().fill(&mut src_data);
+
+    macrotime::dbg_time!("Homemade SHA1", {
+        let (chunks, _) = src_data.as_chunks::<INPUT_SIZE>();
+        for data in chunks {
+            sha1(data);
+        }
+    });
+
+    macrotime::dbg_time!("Crate SHA1", {
+        let (chunks, _) = src_data.as_chunks::<INPUT_SIZE>();
+        for data in chunks {
+            let mut hasher = Sha1::new();
+            hasher.update(data);
+        }
+    });
+}
+
+
+#[allow(dead_code)]
+fn benchmark_sha2() {
+    const INPUT_SIZE: usize = 10_000;
+    const NB_ITEMS: usize = 1_000_000;
+    let mut src_data = vec![0u8; NB_ITEMS];
+    rand::rng().fill(&mut src_data);
+
+    macrotime::dbg_time!("Homemade SHA256", {
+        let (chunks, _) = src_data.as_chunks::<INPUT_SIZE>();
+        for data in chunks {
+            sha2(data);
+        }
+    });
+
+    macrotime::dbg_time!("Crate SHA256", {
+        let (chunks, _) = src_data.as_chunks::<INPUT_SIZE>();
+        for data in chunks {
+            let mut hasher = Sha256::new();
+            hasher.update(data);
+        }
+    });
+}
+
+pub fn main() {
+    benchmark_sha1();
+    benchmark_sha2();
 }

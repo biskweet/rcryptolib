@@ -2,7 +2,7 @@
 
 use crate::bytes_to_word;
 use crate::hash::common;
-use crate::utils::array_unpack_u32_u8;
+use crate::common::array_unpack_u32_u8;
 
 macro_rules! shr   { ($x:expr, $n:expr) => { ($x) >> ($n) } }
 
@@ -126,7 +126,7 @@ fn sha256(message: &[u8], padding: &[u8]) -> [u32; 8] {
     }
 
     // Now if there a seam between the two arrays, process it
-    if message_tail.len() > 0 {
+    if !message_tail.is_empty() {
         let mut seam = [0u8; 64];
         seam[..message_tail.len()].copy_from_slice(message_tail);
         seam[message_tail.len()..].copy_from_slice(padding_head);

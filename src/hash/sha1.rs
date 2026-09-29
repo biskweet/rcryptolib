@@ -1,7 +1,8 @@
 // Reference: RFC 3164 (https://www.ietf.org/rfc/rfc3174.txt)
 
-use crate::{bytes_to_word, common};
-use crate::utils::array_unpack_u32_u8;
+use crate::bytes_to_word;
+use crate::hash::common;
+use crate::common::array_unpack_u32_u8;
 
 macro_rules! s {
     ($x:expr, $n:expr) => { ($x).rotate_left($n) };
@@ -106,7 +107,7 @@ pub fn sha1(message: &[u8]) -> [u8; 4 * 5] {
     }
 
     // Now if there a seam between the two arrays, process it
-    if message_tail.len() > 0 {
+    if !message_tail.is_empty() {
         let mut seam = [0u8; 64];
         seam[..message_tail.len()].copy_from_slice(message_tail);
         seam[message_tail.len()..].copy_from_slice(padding_head);

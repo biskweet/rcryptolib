@@ -37,23 +37,3 @@ pub fn sha_compute_padding(message: &[u8], padding: &mut [u8], block_size: usize
 
     padding_length + message_length_intsize
 }
-
-pub fn print_block(block: &[u8]) {
-    for (j, byte) in block.iter().enumerate() {
-        if j % 16 == 0 {
-            print!("\n");
-        } else if j % 4 == 0 {
-            print!(" ");
-        }
-
-        print!("{:02x}", byte);
-    }
-    println!();
-}
-
-pub fn print_bytes_as_hex(digest: &[u8]) {
-    for byte in digest {
-        print!("{:02x}", byte);
-    }
-    println!();
-}
